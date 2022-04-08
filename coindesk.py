@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import logging
+
 import bspump
 import bspump.common
 import bspump.http
@@ -15,6 +17,7 @@ class EnrichProcessor(bspump.Processor):
 
     def process(self, context, event):
         jpyPrice = str(self.convertUSDtoJPY(event["bpi"]["USD"]["rate_float"]))
+
         event["bpi"]["JPY"] = {
             "code": "JPY",
             "symbol": "&yen;",
@@ -35,18 +38,21 @@ class SamplePipeline(bspump.Pipeline):
             # Source that GET requests from the API source.
             bspump.http.HTTPClientSource(app, self, config={
                 'url': 'https://api.coindesk.com/v1/bpi/currentprice.json'
+                # Trigger that triggers the source every second (based on the method parameter)
             }).on(bspump.trigger.PeriodicTrigger(app, 5)),
             # Converts incoming json event to dict data type.
             bspump.common.StdJsonToDictParser(app, self),
             # Adds a CZK currency to the dict
             EnrichProcessor(app, self),
-            bspump.elasticsearch.ElasticSearchSink(app, self, "ESConnection")
+            bspump.common.StdDictToJsonParser(app, self),
+            # prints the event to a console
+            # bspump.common.PPrintSink(app, self),
+            bspump.elasticsearch.ElasticSearchSink(app, self, "ESConnection"),
         )
 
 
 if __name__ == '__main__':
     app = bspump.BSPumpApplication()
-
     svc = app.get_service("bspump.PumpService")
 
     es_connection = bspump.elasticsearch.ElasticSearchConnection(
@@ -56,4 +62,5 @@ if __name__ == '__main__':
     # Construct and register Pipeline
     pl = SamplePipeline(app, 'SamplePipeline')
     svc.add_pipeline(pl)
+
     app.run()
